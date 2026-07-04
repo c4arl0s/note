@@ -20,13 +20,34 @@ sudo ln -s "$(pwd)/note.sh" /usr/local/bin/note
 
 ## Usage
 
-Add a note from stdin:
+Add a note interactively:
 
 ```bash
 ./note.sh -a "This is the title of a note"
 ```
 
-Type the note content, then press **Ctrl+D** to save.
+Save with any of these:
+- Type a line with only `.` and press Enter
+- Type a line with only `EOF` and press Enter
+- Press Ctrl+D on an empty line
+
+Save a note directly without typing interactively:
+
+```bash
+./note.sh -a -m "Remember to call John" "Reminder"
+```
+
+Save from a file:
+
+```bash
+./note.sh -a -f ./draft.txt "Meeting notes"
+```
+
+Save using your editor (`$EDITOR`, default `nano`):
+
+```bash
+./note.sh -a -e "Meeting notes"
+```
 
 Pipe content into the script:
 

@@ -6,15 +6,26 @@ NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 NOTE_START="<<<NOTE>>>"
 NOTE_END="<<<END>>>"
 
+INPUT_END_MARKER="."
+
 usage() {
     cat >&2 <<EOF
 Usage:
-  $(basename "$0") -a "<title>"   Add a note from stdin
-  $(basename "$0") -l             List and search notes
-  $(basename "$0") "<title>"      Add a note from stdin (shortcut)
+  $(basename "$0") -a [options] "<title>"   Add a note
+  $(basename "$0") -l                         List and search notes
+  $(basename "$0") [options] "<title>"        Add a note (shortcut)
+
+Add options:
+  (default)             Interactive input; save with "." or "EOF" on its own line, or Ctrl+D
+  -m, --message TEXT   Save TEXT directly without stdin
+  -f, --file PATH       Save note content from a file
+  -e, --editor           Open \$EDITOR to write the note
 
 Examples:
   $(basename "$0") -a "Meeting notes"
+  $(basename "$0") -a -m "Remember to call John" "Reminder"
+  $(basename "$0") -a -f ./draft.txt "Meeting notes"
+  $(basename "$0") -a -e "Meeting notes"
   cat notes.md | $(basename "$0") -a "Meeting notes"
 EOF
 }
@@ -35,6 +46,7 @@ save_note() {
         printf '%s\n' "$title"
         printf '%s\n' "$timestamp"
         cat "$content_file"
+        echo
         printf '%s\n' "$NOTE_END"
     } >> "$NOTES_FILE"
 }
@@ -117,31 +129,139 @@ build_note_index() {
     done < "$NOTES_FILE"
 }
 
+read_note_interactive() {
+    local output_file="$1"
+    local line=""
+
+    : > "$output_file"
+
+    cat >&2 <<'EOF'
+Enter your note below.
+
+Save with any of these:
+  - A line containing only "."
+  - A line containing only "EOF"
+  - Ctrl+D on an empty line
+EOF
+
+    while IFS= read -r line; do
+        if [[ "$line" == "$INPUT_END_MARKER" || "$line" == "EOF" ]]; then
+            break
+        fi
+        printf '%s\n' "$line" >> "$output_file"
+    done
+}
+
+read_note_editor() {
+    local output_file="$1"
+    local temp_file editor
+
+    temp_file=$(mktemp)
+    : > "$temp_file"
+    editor="${EDITOR:-nano}"
+
+    if ! command -v "$editor" >/dev/null 2>&1; then
+        editor="vi"
+    fi
+
+    "$editor" "$temp_file"
+    cp "$temp_file" "$output_file"
+    rm -f "$temp_file"
+}
+
+read_note_from_file() {
+    local source_file="$1"
+    local output_file="$2"
+
+    if [[ ! -f "$source_file" ]]; then
+        echo "Error: file not found: $source_file" >&2
+        exit 1
+    fi
+
+    cp "$source_file" "$output_file"
+}
+
+read_note_from_stdin() {
+    local output_file="$1"
+
+    if [[ -t 0 ]]; then
+        read_note_interactive "$output_file"
+    else
+        cat > "$output_file"
+    fi
+}
+
 add_note() {
-    if [[ $# -lt 1 ]]; then
+    local mode="interactive"
+    local source_file=""
+    local message=""
+    local title=""
+    local temp_out
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -e|--editor)
+                mode="editor"
+                shift
+                ;;
+            -f|--file)
+                mode="file"
+                source_file="$2"
+                shift 2
+                ;;
+            -m|--message)
+                mode="message"
+                message="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                return 0
+                ;;
+            -*)
+                echo "Error: unknown option: $1" >&2
+                usage
+                exit 1
+                ;;
+            *)
+                title="$*"
+                break
+                ;;
+        esac
+    done
+
+    if [[ -z "$title" ]]; then
         echo "Error: title is required" >&2
         usage
         exit 1
     fi
 
-    local title="$*"
-    local temp_out
-
     temp_out=$(mktemp)
 
-    if [[ -t 0 ]]; then
-        printf 'Enter note (Ctrl+D to save):\n' >&2
-    fi
-
-    cat > "$temp_out"
+    case "$mode" in
+        editor)
+            read_note_editor "$temp_out"
+            ;;
+        file)
+            read_note_from_file "$source_file" "$temp_out"
+            ;;
+        message)
+            printf '%s' "$message" > "$temp_out"
+            ;;
+        interactive)
+            read_note_from_stdin "$temp_out"
+            ;;
+    esac
 
     if note_is_empty "$temp_out"; then
         rm -f "$temp_out"
+        echo "Note not saved (empty content)." >&2
         return 0
     fi
 
     save_note "$title" "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
     rm -f "$temp_out"
+    echo "Note saved." >&2
 }
 
 list_notes() {
