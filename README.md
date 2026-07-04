@@ -8,13 +8,18 @@ Command-line tool for creating and browsing notes using standard input and [fzy]
 
 ## Installation
 
+Run the install script:
+
 ```bash
-chmod +x note.sh
+./install.sh
 ```
 
-Optional: add the directory to your `PATH` or symlink the script:
+This creates a symbolic link at `/usr/local/bin/note`.
+
+Manual install:
 
 ```bash
+chmod +x note.sh
 sudo ln -s "$(pwd)/note.sh" /usr/local/bin/note
 ```
 
