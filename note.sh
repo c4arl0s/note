@@ -5,7 +5,6 @@ NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
 NOTE_START="<<<NOTE>>>"
 NOTE_END="<<<END>>>"
-
 INPUT_END_MARKER="."
 
 usage() {
@@ -36,19 +35,40 @@ note_is_empty() {
     [[ -z "$(tr -d '[:space:]' < "$file" 2>/dev/null)" ]]
 }
 
-save_note() {
-    local title="$1"
-    local timestamp="$2"
-    local content_file="$3"
+encode_content() {
+    awk 'BEGIN { first = 1 } {
+        if (!first) printf "\\n"
+        first = 0
+        gsub(/\\/, "\\\\")
+        printf "%s", $0
+    }' "$1"
+}
 
-    {
-        printf '%s\n' "$NOTE_START"
-        printf '%s\n' "$title"
-        printf '%s\n' "$timestamp"
-        cat "$content_file"
-        echo
-        printf '%s\n' "$NOTE_END"
-    } >> "$NOTES_FILE"
+decode_content() {
+    local encoded="$1"
+    local line rest
+
+    while [[ -n "$encoded" ]]; do
+        if [[ "$encoded" == *'\n'* ]]; then
+            line="${encoded%%\\n*}"
+            rest="${encoded#*\\n}"
+        else
+            line="$encoded"
+            rest=""
+        fi
+        printf '%s\n' "$line"
+        encoded="$rest"
+    done
+}
+
+save_note() {
+    local timestamp="$1"
+    local title="$2"
+    local content_file="$3"
+    local encoded
+
+    encoded=$(encode_content "$content_file")
+    printf '%s : %s : (%s)\n' "$timestamp" "$title" "$encoded" >> "$NOTES_FILE"
 }
 
 note_preview() {
@@ -65,66 +85,89 @@ note_preview() {
     printf '(empty note)'
 }
 
+index_single_line_note() {
+    local index_dir="$1"
+    local summaries_file="$2"
+    local idx="$3"
+    local timestamp="$4"
+    local title="$5"
+    local encoded="$6"
+    local body_file preview summary
+
+    body_file="$index_dir/$idx.body"
+    decode_content "$encoded" > "$body_file"
+    preview=$(note_preview "$body_file")
+    summary="${timestamp} | ${title} | ${preview}"
+    printf '%s\t%s\t%s\t%s\n' "$idx" "$title" "$timestamp" "$summary" >> "$summaries_file"
+}
+
 build_note_index() {
     local index_dir="$1"
     local summaries_file="$2"
     local idx=0
     local in_note=0
-    local title=""
     local timestamp=""
+    local title=""
     local body_file=""
     local line=""
-    local preview=""
-    local summary=""
+    local encoded=""
+    local block_body=""
 
     : > "$summaries_file"
 
     while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+
         if [[ "$line" == "$NOTE_START" ]]; then
             in_note=1
             idx=$((idx + 1))
             body_file="$index_dir/$idx.body"
-            : > "$body_file"
-            title=""
+            block_body=""
             timestamp="Unknown"
-
+            title="(untitled)"
             IFS= read -r line || line=""
+
             if [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2}$ ]]; then
-                title="(untitled)"
                 timestamp="$line"
+                IFS= read -r title || title="(untitled)"
             else
                 title="$line"
-                IFS= read -r timestamp || timestamp="Unknown"
+                IFS= read -r line || line=""
+                [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2}$ ]] && timestamp="$line"
             fi
             continue
         fi
 
         if [[ "$line" == "$NOTE_END" ]]; then
-            if (( in_note )) && [[ -n "$body_file" ]]; then
-                preview=$(note_preview "$body_file")
-                summary="${title} | ${timestamp} | ${preview}"
-                printf '%s\t%s\t%s\t%s\n' "$idx" "$title" "$timestamp" "$summary" >> "$summaries_file"
+            if (( in_note )); then
+                body_file="$index_dir/$idx.body"
+                printf '%s' "$block_body" > "$body_file"
+                encoded=$(encode_content "$body_file")
+                index_single_line_note "$index_dir" "$summaries_file" "$idx" "$timestamp" "$title" "$encoded"
             fi
             in_note=0
-            body_file=""
             continue
         fi
 
-        if (( in_note )) && [[ -n "$body_file" ]]; then
-            printf '%s\n' "$line" >> "$body_file"
+        if (( in_note )); then
+            if [[ -n "$block_body" ]]; then
+                block_body+=$'\n'
+            fi
+            block_body+="$line"
+            continue
+        fi
+
+        if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*(.+)[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
+            idx=$((idx + 1))
+            index_single_line_note "$index_dir" "$summaries_file" "$idx" \
+                "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
             continue
         fi
 
         if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
             idx=$((idx + 1))
-            title="(untitled)"
-            timestamp="${BASH_REMATCH[1]}"
-            body_file="$index_dir/$idx.body"
-            printf '%s' "${BASH_REMATCH[2]}" > "$body_file"
-            preview=$(note_preview "$body_file")
-            summary="${title} | ${timestamp} | ${preview}"
-            printf '%s\t%s\t%s\t%s\n' "$idx" "$title" "$timestamp" "$summary" >> "$summaries_file"
-            body_file=""
+            index_single_line_note "$index_dir" "$summaries_file" "$idx" \
+                "${BASH_REMATCH[1]}" "(untitled)" "${BASH_REMATCH[2]}"
         fi
     done < "$NOTES_FILE"
 }
@@ -259,7 +302,7 @@ add_note() {
         return 0
     fi
 
-    save_note "$title" "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
+    save_note "$(date '+%Y-%m-%d %H:%M')" "$title" "$temp_out"
     rm -f "$temp_out"
     echo "Note saved." >&2
 }
@@ -311,8 +354,8 @@ list_notes() {
         return 0
     fi
 
-    printf 'Title: %s\n' "$title"
-    printf 'Date: %s\n\n' "$timestamp"
+    printf 'Date: %s\n' "$timestamp"
+    printf 'Title: %s\n\n' "$title"
     cat "$body_file"
 
     rm -rf "$index_dir" "$summaries_file" "$fzy_input"

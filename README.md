@@ -69,17 +69,10 @@ Shortcut to add a note (same as `-a`):
 
 Notes preserve multiple lines and empty lines exactly as written.
 
-Notes are saved to `~/notes.txt` using blocks:
+Notes are saved to `~/notes.txt`, one line per note:
 
 ```
-<<<NOTE>>>
-This is the title of a note
-2026-07-04 12:59
-1. First step
-2. Second step
-
-3. Third step
-<<<END>>>
+2026-07-04 12:59 : Meeting notes : (1. First step\n2. Second step\n\n3. Third step)
 ```
 
-Older single-line notes are still supported when listing and viewing.
+Multi-line content is stored with `\n` inside the parentheses. Older note formats are still supported when listing.
