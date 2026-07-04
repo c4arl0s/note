@@ -4,6 +4,9 @@ DIALOG="/opt/homebrew/bin/dialog"
 FZY="/opt/homebrew/bin/fzy"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
+NOTE_START="<<<NOTE>>>"
+NOTE_END="<<<END>>>"
+
 usage() {
     cat >&2 <<EOF
 Usage:
@@ -20,6 +23,107 @@ check_dependencies() {
     fi
 }
 
+reset_terminal() {
+    stty sane 2>/dev/null
+    tput cnorm 2>/dev/null
+}
+
+dialog_size() {
+    local height width
+    height=$(tput lines 2>/dev/null || echo 24)
+    width=$(tput cols 2>/dev/null || echo 80)
+    height=${height//[^0-9]/}
+    width=${width//[^0-9]/}
+    [[ -z "$height" ]] && height=24
+    [[ -z "$width" ]] && width=80
+    height=$((height - 3))
+    width=$((width - 6))
+    (( height < 12 )) && height=12
+    (( width < 50 )) && width=50
+    echo "$height $width"
+}
+
+note_is_empty() {
+    local file="$1"
+    [[ ! -s "$file" ]] && return 0
+    [[ -z "$(tr -d '[:space:]' < "$file" 2>/dev/null)" ]]
+}
+
+save_note() {
+    local timestamp="$1"
+    local content_file="$2"
+
+    {
+        printf '%s\n' "$NOTE_START"
+        printf '%s\n' "$timestamp"
+        cat "$content_file"
+        printf '%s\n' "$NOTE_END"
+    } >> "$NOTES_FILE"
+}
+
+note_preview() {
+    local body_file="$1"
+    local line=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ -n "$line" ]]; then
+            printf '%s' "$line"
+            return 0
+        fi
+    done < "$body_file"
+
+    printf '(empty note)'
+}
+
+build_note_index() {
+    local index_dir="$1"
+    local summaries_file="$2"
+    local idx=0
+    local in_note=0
+    local timestamp=""
+    local body_file=""
+    local line=""
+    local preview=""
+
+    : > "$summaries_file"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "$NOTE_START" ]]; then
+            in_note=1
+            idx=$((idx + 1))
+            body_file="$index_dir/$idx.body"
+            : > "$body_file"
+            IFS= read -r timestamp || timestamp="Unknown"
+            continue
+        fi
+
+        if [[ "$line" == "$NOTE_END" ]]; then
+            if (( in_note )) && [[ -n "$body_file" ]]; then
+                preview=$(note_preview "$body_file")
+                printf '%s\t%s\t%s | %s\n' "$idx" "$timestamp" "$timestamp" "$preview" >> "$summaries_file"
+            fi
+            in_note=0
+            body_file=""
+            continue
+        fi
+
+        if (( in_note )) && [[ -n "$body_file" ]]; then
+            printf '%s\n' "$line" >> "$body_file"
+            continue
+        fi
+
+        if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
+            idx=$((idx + 1))
+            timestamp="${BASH_REMATCH[1]}"
+            body_file="$index_dir/$idx.body"
+            printf '%s' "${BASH_REMATCH[2]}" > "$body_file"
+            preview=$(note_preview "$body_file")
+            printf '%s\t%s\t%s | %s\n' "$idx" "$timestamp" "$timestamp" "$preview" >> "$summaries_file"
+            body_file=""
+        fi
+    done < "$NOTES_FILE"
+}
+
 add_note() {
     if [[ $# -lt 1 ]]; then
         echo "Error: title is required" >&2
@@ -28,32 +132,28 @@ add_note() {
     fi
 
     local title="$*"
-    local temp_in
+    local box_height box_width temp_in temp_out
+    read -r box_height box_width < <(dialog_size)
     temp_in=$(mktemp)
+    temp_out=$(mktemp)
     : > "$temp_in"
 
-    local note
-    if ! note=$("$DIALOG" --stdout \
+    if ! "$DIALOG" \
         --title "$title" \
         --ok-label "Save" \
         --cancel-label "Cancel" \
-        --editbox "$temp_in" 20 60); then
-        rm -f "$temp_in"
+        --editbox "$temp_in" "$box_height" "$box_width" 2> "$temp_out"; then
+        rm -f "$temp_in" "$temp_out"
         return 0
     fi
 
-    rm -f "$temp_in"
-
-    note="${note//$'\r'/}"
-    note="${note//$'\n'/ }"
-    note="${note#"${note%%[![:space:]]*}"}"
-    note="${note%"${note##*[![:space:]]}"}"
-
-    if [[ -z "$note" ]]; then
+    if note_is_empty "$temp_out"; then
+        rm -f "$temp_in" "$temp_out"
         return 0
     fi
 
-    printf '%s : (%s)\n' "$(date '+%Y-%m-%d %H:%M')" "$note" >> "$NOTES_FILE"
+    save_note "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
+    rm -f "$temp_in" "$temp_out"
 }
 
 list_notes() {
@@ -67,19 +167,55 @@ list_notes() {
         return 0
     fi
 
-    local selected
-    selected=$(<"$NOTES_FILE" "$FZY") || return 0
+    local index_dir summaries_file fzy_input selected_line note_id timestamp
+    local display_file box_height box_width body_file
 
-    if [[ -z "$selected" ]]; then
+    index_dir=$(mktemp -d)
+    summaries_file=$(mktemp)
+    fzy_input=$(mktemp)
+
+    build_note_index "$index_dir" "$summaries_file"
+
+    if [[ ! -s "$summaries_file" ]]; then
+        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        "$DIALOG" --title "Notes" --msgbox "No notes found." 8 40
         return 0
     fi
 
-    local temp_display
-    temp_display=$(mktemp)
-    printf '%s\n' "$selected" > "$temp_display"
+    awk -F '\t' '{ print $3 }' "$summaries_file" > "$fzy_input"
 
-    "$DIALOG" --title "Note" --textbox "$temp_display" 20 70
-    rm -f "$temp_display"
+    selected_line=$(<"$fzy_input" "$FZY") || {
+        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        return 0
+    }
+
+    if [[ -z "$selected_line" ]]; then
+        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        return 0
+    fi
+
+    note_id=$(awk -F '\t' -v selected="$selected_line" '$3 == selected { print $1; exit }' "$summaries_file")
+    timestamp=$(awk -F '\t' -v selected="$selected_line" '$3 == selected { print $2; exit }' "$summaries_file")
+    body_file="$index_dir/$note_id.body"
+
+    if [[ -z "$note_id" || ! -f "$body_file" ]]; then
+        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        return 0
+    fi
+
+    reset_terminal
+
+    display_file=$(mktemp)
+    {
+        printf 'Date: %s\n\n' "$timestamp"
+        cat "$body_file"
+    } > "$display_file"
+
+    read -r box_height box_width < <(dialog_size)
+
+    "$DIALOG" --clear --title "Note" --textbox "$display_file" "$box_height" "$box_width" </dev/tty
+
+    rm -rf "$index_dir" "$summaries_file" "$fzy_input" "$display_file"
 }
 
 check_dependencies

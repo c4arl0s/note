@@ -39,11 +39,18 @@ Shortcut to add a note (same as `-a`):
 ./note.sh "This is the title of a note"
 ```
 
-When adding a note, use **Save** to store it or **Cancel** to discard.
+When adding a note, use **Save** to store it or **Cancel** to discard. Notes preserve multiple lines and empty lines exactly as written.
 
-Notes are saved to `~/notes.txt`, one per line:
+Notes are saved to `~/notes.txt` using blocks:
 
 ```
-2026-07-04 12:59 : (This is a new note)
-2026-07-04 13:58 : (This is a second note)
+<<<NOTE>>>
+2026-07-04 12:59
+1. First step
+2. Second step
+
+3. Third step
+<<<END>>>
 ```
+
+Older single-line notes are still supported when listing and viewing.
