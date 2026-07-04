@@ -27,7 +27,7 @@ Add a note:
 ./note.sh -a "This is the title of a note"
 ```
 
-List and search notes with fzy, then view the selected note in a dialog:
+List and search notes with fzy, then print the selected note to stdout:
 
 ```bash
 ./note.sh -l
@@ -45,6 +45,7 @@ Notes are saved to `~/notes.txt` using blocks:
 
 ```
 <<<NOTE>>>
+This is the title of a note
 2026-07-04 12:59
 1. First step
 2. Second step

@@ -23,11 +23,6 @@ check_dependencies() {
     fi
 }
 
-reset_terminal() {
-    stty sane 2>/dev/null
-    tput cnorm 2>/dev/null
-}
-
 dialog_size() {
     local height width
     height=$(tput lines 2>/dev/null || echo 24)
@@ -50,11 +45,13 @@ note_is_empty() {
 }
 
 save_note() {
-    local timestamp="$1"
-    local content_file="$2"
+    local title="$1"
+    local timestamp="$2"
+    local content_file="$3"
 
     {
         printf '%s\n' "$NOTE_START"
+        printf '%s\n' "$title"
         printf '%s\n' "$timestamp"
         cat "$content_file"
         printf '%s\n' "$NOTE_END"
@@ -80,10 +77,12 @@ build_note_index() {
     local summaries_file="$2"
     local idx=0
     local in_note=0
+    local title=""
     local timestamp=""
     local body_file=""
     local line=""
     local preview=""
+    local summary=""
 
     : > "$summaries_file"
 
@@ -93,14 +92,25 @@ build_note_index() {
             idx=$((idx + 1))
             body_file="$index_dir/$idx.body"
             : > "$body_file"
-            IFS= read -r timestamp || timestamp="Unknown"
+            title=""
+            timestamp="Unknown"
+
+            IFS= read -r line || line=""
+            if [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2}$ ]]; then
+                title="(untitled)"
+                timestamp="$line"
+            else
+                title="$line"
+                IFS= read -r timestamp || timestamp="Unknown"
+            fi
             continue
         fi
 
         if [[ "$line" == "$NOTE_END" ]]; then
             if (( in_note )) && [[ -n "$body_file" ]]; then
                 preview=$(note_preview "$body_file")
-                printf '%s\t%s\t%s | %s\n' "$idx" "$timestamp" "$timestamp" "$preview" >> "$summaries_file"
+                summary="${title} | ${timestamp} | ${preview}"
+                printf '%s\t%s\t%s\t%s\n' "$idx" "$title" "$timestamp" "$summary" >> "$summaries_file"
             fi
             in_note=0
             body_file=""
@@ -114,11 +124,13 @@ build_note_index() {
 
         if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
             idx=$((idx + 1))
+            title="(untitled)"
             timestamp="${BASH_REMATCH[1]}"
             body_file="$index_dir/$idx.body"
             printf '%s' "${BASH_REMATCH[2]}" > "$body_file"
             preview=$(note_preview "$body_file")
-            printf '%s\t%s\t%s | %s\n' "$idx" "$timestamp" "$timestamp" "$preview" >> "$summaries_file"
+            summary="${title} | ${timestamp} | ${preview}"
+            printf '%s\t%s\t%s\t%s\n' "$idx" "$title" "$timestamp" "$summary" >> "$summaries_file"
             body_file=""
         fi
     done < "$NOTES_FILE"
@@ -152,7 +164,7 @@ add_note() {
         return 0
     fi
 
-    save_note "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
+    save_note "$title" "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
     rm -f "$temp_in" "$temp_out"
 }
 
@@ -163,12 +175,11 @@ list_notes() {
     fi
 
     if [[ ! -s "$NOTES_FILE" ]]; then
-        "$DIALOG" --title "Notes" --msgbox "No notes found." 8 40
+        echo "No notes found." >&2
         return 0
     fi
 
-    local index_dir summaries_file fzy_input selected_line note_id timestamp
-    local display_file box_height box_width body_file
+    local index_dir summaries_file fzy_input selected_line note_id title timestamp body_file
 
     index_dir=$(mktemp -d)
     summaries_file=$(mktemp)
@@ -178,11 +189,11 @@ list_notes() {
 
     if [[ ! -s "$summaries_file" ]]; then
         rm -rf "$index_dir" "$summaries_file" "$fzy_input"
-        "$DIALOG" --title "Notes" --msgbox "No notes found." 8 40
+        echo "No notes found." >&2
         return 0
     fi
 
-    awk -F '\t' '{ print $3 }' "$summaries_file" > "$fzy_input"
+    awk -F '\t' '{ print $4 }' "$summaries_file" > "$fzy_input"
 
     selected_line=$(<"$fzy_input" "$FZY") || {
         rm -rf "$index_dir" "$summaries_file" "$fzy_input"
@@ -194,8 +205,9 @@ list_notes() {
         return 0
     fi
 
-    note_id=$(awk -F '\t' -v selected="$selected_line" '$3 == selected { print $1; exit }' "$summaries_file")
-    timestamp=$(awk -F '\t' -v selected="$selected_line" '$3 == selected { print $2; exit }' "$summaries_file")
+    note_id=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $1; exit }' "$summaries_file")
+    title=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $2; exit }' "$summaries_file")
+    timestamp=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $3; exit }' "$summaries_file")
     body_file="$index_dir/$note_id.body"
 
     if [[ -z "$note_id" || ! -f "$body_file" ]]; then
@@ -203,19 +215,11 @@ list_notes() {
         return 0
     fi
 
-    reset_terminal
+    printf 'Title: %s\n' "$title"
+    printf 'Date: %s\n\n' "$timestamp"
+    cat "$body_file"
 
-    display_file=$(mktemp)
-    {
-        printf 'Date: %s\n\n' "$timestamp"
-        cat "$body_file"
-    } > "$display_file"
-
-    read -r box_height box_width < <(dialog_size)
-
-    "$DIALOG" --clear --title "Note" --textbox "$display_file" "$box_height" "$box_width" </dev/tty
-
-    rm -rf "$index_dir" "$summaries_file" "$fzy_input" "$display_file"
+    rm -rf "$index_dir" "$summaries_file" "$fzy_input"
 }
 
 check_dependencies
