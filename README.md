@@ -1,10 +1,9 @@
 # note
 
-Command-line tool for creating and browsing notes using [dialog](https://invisible-island.net/dialog/) and [fzy](https://github.com/junegunn/fzy).
+Command-line tool for creating and browsing notes using standard input and [fzy](https://github.com/junegunn/fzy).
 
 ## Requirements
 
-- `dialog` at `/opt/homebrew/bin/dialog`
 - `fzy` at `/opt/homebrew/bin/fzy`
 
 ## Installation
@@ -21,10 +20,18 @@ sudo ln -s "$(pwd)/note.sh" /usr/local/bin/note
 
 ## Usage
 
-Add a note:
+Add a note from stdin:
 
 ```bash
 ./note.sh -a "This is the title of a note"
+```
+
+Type the note content, then press **Ctrl+D** to save.
+
+Pipe content into the script:
+
+```bash
+cat notes.md | ./note.sh -a "Meeting notes"
 ```
 
 List and search notes with fzy, then print the selected note to stdout:
@@ -39,7 +46,7 @@ Shortcut to add a note (same as `-a`):
 ./note.sh "This is the title of a note"
 ```
 
-When adding a note, use **Save** to store it or **Cancel** to discard. Notes preserve multiple lines and empty lines exactly as written.
+Notes preserve multiple lines and empty lines exactly as written.
 
 Notes are saved to `~/notes.txt` using blocks:
 

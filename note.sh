@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-DIALOG="/opt/homebrew/bin/dialog"
 FZY="/opt/homebrew/bin/fzy"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
@@ -10,32 +9,14 @@ NOTE_END="<<<END>>>"
 usage() {
     cat >&2 <<EOF
 Usage:
-  $(basename "$0") -a "<title>"   Add a note
+  $(basename "$0") -a "<title>"   Add a note from stdin
   $(basename "$0") -l             List and search notes
-  $(basename "$0") "<title>"      Add a note (shortcut)
+  $(basename "$0") "<title>"      Add a note from stdin (shortcut)
+
+Examples:
+  $(basename "$0") -a "Meeting notes"
+  cat notes.md | $(basename "$0") -a "Meeting notes"
 EOF
-}
-
-check_dependencies() {
-    if [[ ! -x "$DIALOG" ]]; then
-        echo "Error: dialog not found at $DIALOG" >&2
-        exit 1
-    fi
-}
-
-dialog_size() {
-    local height width
-    height=$(tput lines 2>/dev/null || echo 24)
-    width=$(tput cols 2>/dev/null || echo 80)
-    height=${height//[^0-9]/}
-    width=${width//[^0-9]/}
-    [[ -z "$height" ]] && height=24
-    [[ -z "$width" ]] && width=80
-    height=$((height - 3))
-    width=$((width - 6))
-    (( height < 12 )) && height=12
-    (( width < 50 )) && width=50
-    echo "$height $width"
 }
 
 note_is_empty() {
@@ -144,28 +125,23 @@ add_note() {
     fi
 
     local title="$*"
-    local box_height box_width temp_in temp_out
-    read -r box_height box_width < <(dialog_size)
-    temp_in=$(mktemp)
-    temp_out=$(mktemp)
-    : > "$temp_in"
+    local temp_out
 
-    if ! "$DIALOG" \
-        --title "$title" \
-        --ok-label "Save" \
-        --cancel-label "Cancel" \
-        --editbox "$temp_in" "$box_height" "$box_width" 2> "$temp_out"; then
-        rm -f "$temp_in" "$temp_out"
-        return 0
+    temp_out=$(mktemp)
+
+    if [[ -t 0 ]]; then
+        printf 'Enter note (Ctrl+D to save):\n' >&2
     fi
 
+    cat > "$temp_out"
+
     if note_is_empty "$temp_out"; then
-        rm -f "$temp_in" "$temp_out"
+        rm -f "$temp_out"
         return 0
     fi
 
     save_note "$title" "$(date '+%Y-%m-%d %H:%M')" "$temp_out"
-    rm -f "$temp_in" "$temp_out"
+    rm -f "$temp_out"
 }
 
 list_notes() {
@@ -221,8 +197,6 @@ list_notes() {
 
     rm -rf "$index_dir" "$summaries_file" "$fzy_input"
 }
-
-check_dependencies
 
 case "${1:-}" in
     -a|--add)
