@@ -31,10 +31,15 @@ Add a note interactively:
 ./note.sh -a "This is the title of a note"
 ```
 
-Save with any of these:
+The interactive prompt launches a terminal-based editor where you can:
+- Navigate and edit any line of the note using the **Arrow keys**.
+- Edit text using standard keys (Backspace, Delete, Enter to split lines).
+- Use standard line editing shortcuts: **Ctrl+A** (Home), **Ctrl+E** (End), **Ctrl+U** (clear to start of line), and **Ctrl+K** (clear to end of line).
+
+Save and exit with any of these:
 - Type a line with only `.` and press Enter
 - Type a line with only `EOF` and press Enter
-- Press Ctrl+D on an empty line
+- Press **Ctrl+D** from anywhere to save the note immediately
 
 Save a note directly without typing interactively:
 

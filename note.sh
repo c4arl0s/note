@@ -174,11 +174,212 @@ build_note_index() {
 
 read_note_interactive() {
     local output_file="$1"
-    local line=""
+    local temp_py
+    temp_py=$(mktemp)
 
-    : > "$output_file"
+    cat << 'EOF' > "$temp_py"
+import sys
+import curses
 
-    cat >&2 <<'EOF'
+def main(stdscr):
+    # Enable color support
+    curses.use_default_colors()
+    try:
+        curses.curs_set(1)
+    except curses.error:
+        pass
+    stdscr.keypad(True)
+    
+    # Text buffer
+    lines = [""]
+    cursor_y = 0  # index in lines
+    cursor_x = 0  # index in lines[cursor_y]
+    
+    # Scroll offsets
+    top_line = 0
+    left_col = 0
+    
+    prompt = [
+        "Enter your note below.",
+        "",
+        "Save with any of these:",
+        "  - A line containing only \".\"",
+        "  - A line containing only \"EOF\"",
+        "  - Ctrl+D on an empty line",
+        "-" * 40
+    ]
+    prompt_len = len(prompt)
+    
+    while True:
+        height, width = stdscr.getmaxyx()
+        max_rows = height - prompt_len - 1
+        max_cols = width - 1
+        
+        if max_rows <= 0 or max_cols <= 0:
+            # Terminal is too small
+            stdscr.clear()
+            stdscr.addstr(0, 0, "Terminal too small!")
+            stdscr.refresh()
+            ch = stdscr.get_wch()
+            if ch == curses.KEY_RESIZE:
+                continue
+            elif ch == '\x04': # Ctrl+D
+                break
+            continue
+            
+        # Adjust vertical scrolling
+        if cursor_y < top_line:
+            top_line = cursor_y
+        elif cursor_y >= top_line + max_rows:
+            top_line = cursor_y - max_rows + 1
+            
+        # Adjust horizontal scrolling
+        if cursor_x < left_col:
+            left_col = cursor_x
+        elif cursor_x >= left_col + max_cols:
+            left_col = cursor_x - max_cols + 1
+            
+        stdscr.clear()
+        
+        # Draw prompt
+        for i, p_line in enumerate(prompt):
+            if i < height:
+                stdscr.addstr(i, 0, p_line[:width-1])
+                
+        # Draw text
+        for i in range(max_rows):
+            line_idx = top_line + i
+            if line_idx >= len(lines):
+                break
+            row = prompt_len + i
+            if row < height - 1:
+                line_content = lines[line_idx]
+                visible_content = line_content[left_col:left_col + max_cols]
+                stdscr.addstr(row, 0, visible_content)
+                
+        # Position cursor
+        stdscr.move(prompt_len + cursor_y - top_line, cursor_x - left_col)
+        stdscr.refresh()
+        
+        try:
+            ch = stdscr.get_wch()
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            continue
+            
+        # Handle key input
+        if isinstance(ch, int):
+            if ch == curses.KEY_UP:
+                if cursor_y > 0:
+                    cursor_y -= 1
+                    cursor_x = min(cursor_x, len(lines[cursor_y]))
+            elif ch == curses.KEY_DOWN:
+                if cursor_y < len(lines) - 1:
+                    cursor_y += 1
+                    cursor_x = min(cursor_x, len(lines[cursor_y]))
+            elif ch == curses.KEY_LEFT:
+                if cursor_x > 0:
+                    cursor_x -= 1
+                elif cursor_y > 0:
+                    cursor_y -= 1
+                    cursor_x = len(lines[cursor_y])
+            elif ch == curses.KEY_RIGHT:
+                if cursor_x < len(lines[cursor_y]):
+                    cursor_x += 1
+                elif cursor_y < len(lines) - 1:
+                    cursor_y += 1
+                    cursor_x = 0
+            elif ch == curses.KEY_HOME:
+                cursor_x = 0
+            elif ch == curses.KEY_END:
+                cursor_x = len(lines[cursor_y])
+            elif ch == curses.KEY_BACKSPACE:
+                if cursor_x > 0:
+                    current_line = lines[cursor_y]
+                    lines[cursor_y] = current_line[:cursor_x - 1] + current_line[cursor_x:]
+                    cursor_x -= 1
+                elif cursor_y > 0:
+                    prev_line = lines[cursor_y - 1]
+                    cursor_x = len(prev_line)
+                    lines[cursor_y - 1] = prev_line + lines[cursor_y]
+                    lines.pop(cursor_y)
+                    cursor_y -= 1
+            elif ch == curses.KEY_DC: # Delete
+                current_line = lines[cursor_y]
+                if cursor_x < len(current_line):
+                    lines[cursor_y] = current_line[:cursor_x] + current_line[cursor_x + 1:]
+                elif cursor_y < len(lines) - 1:
+                    lines[cursor_y] = current_line + lines[cursor_y + 1]
+                    lines.pop(cursor_y + 1)
+            elif ch == curses.KEY_RESIZE:
+                pass
+                
+        elif isinstance(ch, str):
+            # Check Ctrl keys
+            if ch == '\x04': # Ctrl+D
+                break
+            elif ch == '\x01': # Ctrl+A (Home)
+                cursor_x = 0
+            elif ch == '\x05': # Ctrl+E (End)
+                cursor_x = len(lines[cursor_y])
+            elif ch == '\x15': # Ctrl+U
+                lines[cursor_y] = lines[cursor_y][cursor_x:]
+                cursor_x = 0
+            elif ch == '\x0b': # Ctrl+K
+                lines[cursor_y] = lines[cursor_y][:cursor_x]
+            elif ch in ('\n', '\r'):
+                # Enter key pressed
+                current_line = lines[cursor_y]
+                if current_line == "." or current_line == "EOF":
+                    lines.pop(cursor_y)
+                    break
+                # Split line
+                left = current_line[:cursor_x]
+                right = current_line[cursor_x:]
+                lines[cursor_y] = left
+                lines.insert(cursor_y + 1, right)
+                cursor_y += 1
+                cursor_x = 0
+            elif ch in ('\x7f', '\x08', '\b'): # Backspace characters
+                if cursor_x > 0:
+                    current_line = lines[cursor_y]
+                    lines[cursor_y] = current_line[:cursor_x - 1] + current_line[cursor_x:]
+                    cursor_x -= 1
+                elif cursor_y > 0:
+                    prev_line = lines[cursor_y - 1]
+                    cursor_x = len(prev_line)
+                    lines[cursor_y - 1] = prev_line + lines[cursor_y]
+                    lines.pop(cursor_y)
+                    cursor_y -= 1
+            else:
+                # General characters (including wide chars)
+                if len(ch) == 1 and ord(ch) >= 32:
+                    current_line = lines[cursor_y]
+                    lines[cursor_y] = current_line[:cursor_x] + ch + current_line[cursor_x:]
+                    cursor_x += 1
+
+    # Write output to the file passed as argument
+    output_file = sys.argv[1]
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for line in lines:
+            f.write(line + '\n')
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        sys.exit(1)
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        sys.exit(130)
+EOF
+
+    python3 "$temp_py" "$output_file"
+    local exit_status=$?
+    rm -f "$temp_py"
+
+    if [[ $exit_status -eq 0 ]]; then
+        cat >&2 <<'EOF'
 Enter your note below.
 
 Save with any of these:
@@ -186,13 +387,12 @@ Save with any of these:
   - A line containing only "EOF"
   - Ctrl+D on an empty line
 EOF
-
-    while IFS= read -r line; do
-        if [[ "$line" == "$INPUT_END_MARKER" || "$line" == "EOF" ]]; then
-            break
+        if [[ -f "$output_file" ]]; then
+            cat "$output_file" >&2
         fi
-        printf '%s\n' "$line" >> "$output_file"
-    done
+    fi
+
+    return $exit_status
 }
 
 read_note_editor() {
