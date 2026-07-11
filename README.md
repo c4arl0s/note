@@ -65,10 +65,10 @@ Pipe content into the script:
 cat notes.md | ./note.sh -a "Meeting notes"
 ```
 
-List and search notes with fzy, then print the selected note to stdout:
+List and search notes with fzy, then print the selected note to stdout (default behavior when no arguments are provided):
 
 ```bash
-./note.sh -l
+./note.sh
 ```
 
 Shortcut to add a note (same as `-a`):

@@ -10,8 +10,8 @@ INPUT_END_MARKER="."
 usage() {
     cat >&2 <<EOF
 Usage:
+  $(basename "$0")                            List and search notes
   $(basename "$0") -a [options] "<title>"   Add a note
-  $(basename "$0") -l                         List and search notes
   $(basename "$0") [options] "<title>"        Add a note (shortcut)
 
 Add options:
@@ -21,6 +21,7 @@ Add options:
   -e, --editor           Open \$EDITOR to write the note
 
 Examples:
+  $(basename "$0")
   $(basename "$0") -a "Meeting notes"
   $(basename "$0") -a -m "Remember to call John" "Reminder"
   $(basename "$0") -a -f ./draft.txt "Meeting notes"
@@ -566,15 +567,11 @@ case "${1:-}" in
         shift
         add_note "$@"
         ;;
-    -l|--list)
-        list_notes
-        ;;
     -h|--help)
         usage
         ;;
     "")
-        usage
-        exit 1
+        list_notes
         ;;
     *)
         add_note "$@"
