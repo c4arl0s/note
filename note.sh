@@ -47,19 +47,34 @@ encode_content() {
 
 decode_content() {
     local encoded="$1"
-    local line rest
-
-    while [[ -n "$encoded" ]]; do
-        if [[ "$encoded" == *'\n'* ]]; then
-            line="${encoded%%\\n*}"
-            rest="${encoded#*\\n}"
-        else
-            line="$encoded"
-            rest=""
-        fi
-        printf '%s\n' "$line"
-        encoded="$rest"
-    done
+    encoded="$encoded" awk 'BEGIN {
+        encoded = ENVIRON["encoded"]
+        n = length(encoded)
+        result = ""
+        for (i = 1; i <= n; i++) {
+            char = substr(encoded, i, 1)
+            if (char == "\\") {
+                if (i < n) {
+                    next_char = substr(encoded, i+1, 1)
+                    if (next_char == "n") {
+                        result = result "\n"
+                        i++
+                    } else if (next_char == "\\") {
+                        result = result "\\"
+                        i++
+                    } else {
+                        result = result char next_char
+                        i++
+                    }
+                } else {
+                    result = result "\\"
+                }
+            } else {
+                result = result char
+            }
+        }
+        printf "%s\n", result
+    }'
 }
 
 save_note() {
@@ -545,9 +560,9 @@ list_notes() {
         return 0
     fi
 
-    note_id=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $1; exit }' "$summaries_file")
-    title=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $2; exit }' "$summaries_file")
-    timestamp=$(awk -F '\t' -v selected="$selected_line" '$4 == selected { print $3; exit }' "$summaries_file")
+    IFS=$'\t' read -r note_id title timestamp < <(
+        selected="$selected_line" awk -F '\t' 'BEGIN { OFS="\t" } $4 == ENVIRON["selected"] { print $1, $2, $3; exit }' "$summaries_file"
+    )
     body_file="$index_dir/$note_id.body"
 
     if [[ -z "$note_id" || ! -f "$body_file" ]]; then
