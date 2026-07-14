@@ -548,7 +548,7 @@ list_notes() {
         return 0
     fi
 
-    awk -F '\t' '{ print $4 }' "$summaries_file" > "$fzy_input"
+    awk -F '\t' '{ lines[NR] = $4 } END { for (i = NR; i > 0; i--) print lines[i] }' "$summaries_file" > "$fzy_input"
 
     selected_line=$(<"$fzy_input" "$FZY") || {
         rm -rf "$index_dir" "$summaries_file" "$fzy_input"
@@ -561,7 +561,11 @@ list_notes() {
     fi
 
     IFS=$'\t' read -r note_id title timestamp < <(
-        selected="$selected_line" awk -F '\t' 'BEGIN { OFS="\t" } $4 == ENVIRON["selected"] { print $1, $2, $3; exit }' "$summaries_file"
+        selected="$selected_line" awk -F '\t' '
+            BEGIN { OFS="\t" }
+            $4 == ENVIRON["selected"] { note_id = $1; title = $2; timestamp = $3 }
+            END { if (note_id != "") print note_id, title, timestamp }
+        ' "$summaries_file"
     )
     body_file="$index_dir/$note_id.body"
 
