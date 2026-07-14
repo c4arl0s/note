@@ -408,7 +408,7 @@ Save with any of these:
   - Ctrl+D on an empty line
 EOF
         if [[ -f "$output_file" ]]; then
-            cat "$output_file" >&2
+            hyperlink_urls "$output_file" >&2
         fi
     fi
 
@@ -522,9 +522,14 @@ add_note() {
         return 0
     fi
 
-    save_note "$(date '+%Y-%m-%d %H:%M')" "$title" "$temp_out"
-    rm -f "$temp_out"
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M')"
+    save_note "$timestamp" "$title" "$temp_out"
     echo "Note saved." >&2
+    printf 'Date: %s\n' "$timestamp" >&2
+    printf 'Title: %s\n\n' "$title" | hyperlink_urls >&2
+    hyperlink_urls "$temp_out" >&2
+    rm -f "$temp_out"
 }
 
 list_notes() {
