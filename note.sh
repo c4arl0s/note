@@ -102,7 +102,8 @@ note_preview() {
 }
 
 hyperlink_urls() {
-    sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b[4;34m\1\x1b[0m|g' "$@"
+    local reset_color="${1:-\x1b[0m}"
+    sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b[4;34m\1\x1b[0m'"$reset_color"'|g' "${@:2}"
 }
 
 index_single_line_note() {
@@ -408,7 +409,9 @@ Save with any of these:
   - Ctrl+D on an empty line
 EOF
         if [[ -f "$output_file" ]]; then
-            hyperlink_urls "$output_file" >&2
+            printf '\x1b[37m' >&2
+            hyperlink_urls '\x1b[37m' "$output_file" >&2
+            printf '\x1b[0m' >&2
         fi
     fi
 
@@ -526,9 +529,11 @@ add_note() {
     timestamp="$(date '+%Y-%m-%d %H:%M')"
     save_note "$timestamp" "$title" "$temp_out"
     echo "Note saved." >&2
-    printf 'Date: %s\n' "$timestamp" >&2
-    printf 'Title: %s\n\n' "$title" | hyperlink_urls >&2
-    hyperlink_urls "$temp_out" >&2
+    printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp" >&2
+    printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m' >&2
+    printf '\x1b[37m' >&2
+    hyperlink_urls '\x1b[37m' "$temp_out" >&2
+    printf '\x1b[0m' >&2
     rm -f "$temp_out"
 }
 
@@ -583,9 +588,11 @@ list_notes() {
         return 0
     fi
 
-    printf 'Date: %s\n' "$timestamp"
-    printf 'Title: %s\n\n' "$title" | hyperlink_urls
-    hyperlink_urls "$body_file"
+    printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
+    printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
+    printf '\x1b[37m'
+    hyperlink_urls '\x1b[37m' "$body_file"
+    printf '\x1b[0m'
 
     rm -rf "$index_dir" "$summaries_file" "$fzy_input"
 }
