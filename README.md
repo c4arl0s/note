@@ -77,7 +77,7 @@ Shortcut to add a note (same as `-a`):
 ./note.sh "This is the title of a note"
 ```
 
-Notes preserve multiple lines and empty lines exactly as written. Any HTTP/HTTPS URL links in the note are automatically rendered as clickable terminal hyperlinks, allowing you to open them directly in your default web browser (like Safari) by clicking them.
+Notes preserve multiple lines and empty lines exactly as written. Any HTTP/HTTPS URL links in the note are automatically highlighted as blue, underlined hyperlinks, allowing you to open them directly in your default web browser (like Safari) by clicking (or Cmd-clicking) them.
 
 Notes are saved to `~/notes.txt`, one line per note:
 

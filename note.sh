@@ -102,7 +102,7 @@ note_preview() {
 }
 
 hyperlink_urls() {
-    sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b]8;;\1\x1b\\\1\x1b]8;;\x1b\\|g' "$@"
+    sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b[4;34m\1\x1b[0m|g' "$@"
 }
 
 index_single_line_note() {
