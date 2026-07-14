@@ -101,6 +101,10 @@ note_preview() {
     printf '(empty note)'
 }
 
+hyperlink_urls() {
+    sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b]8;;\1\x1b\\\1\x1b]8;;\x1b\\|g' "$@"
+}
+
 index_single_line_note() {
     local index_dir="$1"
     local summaries_file="$2"
@@ -575,8 +579,8 @@ list_notes() {
     fi
 
     printf 'Date: %s\n' "$timestamp"
-    printf 'Title: %s\n\n' "$title"
-    cat "$body_file"
+    printf 'Title: %s\n\n' "$title" | hyperlink_urls
+    hyperlink_urls "$body_file"
 
     rm -rf "$index_dir" "$summaries_file" "$fzy_input"
 }
