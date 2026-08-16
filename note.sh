@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-FZY="/opt/homebrew/bin/fzy"
+FZY="${FZY:-/opt/homebrew/bin/fzy}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
 NOTE_START="<<<NOTE>>>"
@@ -13,6 +13,7 @@ Usage:
   $(basename "$0")                            List and search notes
   $(basename "$0") -a [options] "<title>"   Add a note
   $(basename "$0") [options] "<title>"        Add a note (shortcut)
+  $(basename "$0") -D                         Delete a note interactively
 
 Add options:
   (default)             Interactive input; save with "." or "EOF" on its own line, or Ctrl+D
@@ -27,6 +28,7 @@ Examples:
   $(basename "$0") -a -f ./draft.txt "Meeting notes"
   $(basename "$0") -a -e "Meeting notes"
   cat notes.md | $(basename "$0") -a "Meeting notes"
+  $(basename "$0") -D
 EOF
 }
 
@@ -85,6 +87,66 @@ save_note() {
 
     encoded=$(encode_content "$content_file")
     printf '%s : %s : (%s)\n' "$timestamp" "$title" "$encoded" >> "$NOTES_FILE"
+}
+
+delete_note_by_id() {
+    local target_id="$1"
+    local temp_file
+    temp_file=$(mktemp)
+
+    local idx=0
+    local in_note=0
+    local skip_current=0
+    local line=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ -z "$line" ]]; then
+            if (( in_note && ! skip_current )) || ! (( in_note )); then
+                printf '%s\n' "$line" >> "$temp_file"
+            fi
+            continue
+        fi
+
+        if [[ "$line" == "$NOTE_START" ]]; then
+            in_note=1
+            idx=$((idx + 1))
+            if [[ "$idx" -eq "$target_id" ]]; then
+                skip_current=1
+            else
+                skip_current=0
+                printf '%s\n' "$line" >> "$temp_file"
+            fi
+            continue
+        fi
+
+        if [[ "$line" == "$NOTE_END" ]]; then
+            if ! (( skip_current )); then
+                printf '%s\n' "$line" >> "$temp_file"
+            fi
+            in_note=0
+            skip_current=0
+            continue
+        fi
+
+        if (( in_note )); then
+            if ! (( skip_current )); then
+                printf '%s\n' "$line" >> "$temp_file"
+            fi
+            continue
+        fi
+
+        if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*(.+)[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]] || \
+           [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
+            idx=$((idx + 1))
+            if [[ "$idx" -ne "$target_id" ]]; then
+                printf '%s\n' "$line" >> "$temp_file"
+            fi
+        else
+            printf '%s\n' "$line" >> "$temp_file"
+        fi
+    done < "$NOTES_FILE"
+
+    mv "$temp_file" "$NOTES_FILE"
 }
 
 note_preview() {
@@ -538,6 +600,7 @@ add_note() {
 }
 
 list_notes() {
+    local mode="${1:-list}"
     if [[ ! -x "$FZY" ]]; then
         echo "Error: fzy not found at $FZY" >&2
         exit 1
@@ -593,6 +656,23 @@ list_notes() {
     printf '\x1b[37m'
     hyperlink_urls '\x1b[37m' "$body_file"
     printf '\x1b[0m'
+    echo ""
+
+    if [[ "$mode" == "delete" ]]; then
+        printf '\nDelete this note? (y/n): '
+        local answer
+        if [[ -t 0 ]]; then
+            read -r answer < /dev/tty || true
+        else
+            read -r answer || true
+        fi
+        if [[ "$answer" =~ ^[yY](es)?$ ]]; then
+            delete_note_by_id "$note_id"
+            echo "Note deleted."
+        else
+            echo "Cancelled."
+        fi
+    fi
 
     rm -rf "$index_dir" "$summaries_file" "$fzy_input"
 }
@@ -601,6 +681,10 @@ case "${1:-}" in
     -a|--add)
         shift
         add_note "$@"
+        ;;
+    -D)
+        shift
+        list_notes "delete"
         ;;
     -h|--help)
         usage

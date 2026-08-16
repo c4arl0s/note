@@ -71,6 +71,12 @@ List and search notes with fzy (with the latest note on top of the list), then p
 ./note.sh
 ```
 
+Delete a note interactively with fzy (displays the selected note and prompts for confirmation before deletion):
+
+```bash
+./note.sh -D
+```
+
 Shortcut to add a note (same as `-a`):
 
 ```bash
