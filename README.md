@@ -5,6 +5,7 @@ Command-line tool for creating and browsing notes using standard input and [fzy]
 ## Requirements
 
 - `fzy` at `/opt/homebrew/bin/fzy`
+- `glow` at `/opt/homebrew/bin/glow` (optional, for rendering markdown notes)
 
 ## Installation
 

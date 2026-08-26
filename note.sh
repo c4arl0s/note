@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 FZY="${FZY:-/opt/homebrew/bin/fzy}"
+GLOW="${GLOW:-/opt/homebrew/bin/glow}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
 NOTE_START="<<<NOTE>>>"
@@ -290,9 +291,13 @@ EOF
     done
 
     if [[ -f "$output_file" ]]; then
-        printf '\x1b[37m' >&2
-        hyperlink_urls '\x1b[37m' "$output_file" >&2
-        printf '\x1b[0m' >&2
+        if [[ -x "$GLOW" ]]; then
+            "$GLOW" "$output_file" 2>/dev/null >&2
+        else
+            printf '\x1b[37m' >&2
+            hyperlink_urls '\x1b[37m' "$output_file" >&2
+            printf '\x1b[0m' >&2
+        fi
     fi
 
     return 0
@@ -409,11 +414,20 @@ add_note() {
     timestamp="$(date '+%Y-%m-%d %H:%M')"
     save_note "$timestamp" "$title" "$temp_out"
     echo "Note saved." >&2
-    printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp" >&2
-    printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m' >&2
-    printf '\x1b[37m' >&2
-    hyperlink_urls '\x1b[37m' "$temp_out" >&2
-    printf '\x1b[0m' >&2
+    if [[ -x "$GLOW" ]]; then
+        (
+            echo "## ${title}"
+            echo "*Date: ${timestamp}*"
+            echo "---"
+            cat "$temp_out"
+        ) | "$GLOW" - 2>/dev/null >&2
+    else
+        printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp" >&2
+        printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m' >&2
+        printf '\x1b[37m' >&2
+        hyperlink_urls '\x1b[37m' "$temp_out" >&2
+        printf '\x1b[0m' >&2
+    fi
     rm -f "$temp_out"
 }
 
@@ -469,11 +483,20 @@ list_notes() {
         return 0
     fi
 
-    printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
-    printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
-    printf '\x1b[37m'
-    hyperlink_urls '\x1b[37m' "$body_file"
-    printf '\x1b[0m'
+    if [[ -x "$GLOW" ]]; then
+        (
+            echo "## ${title}"
+            echo "*Date: ${timestamp}*"
+            echo "---"
+            cat "$body_file"
+        ) | "$GLOW" - 2>/dev/null
+    else
+        printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
+        printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
+        printf '\x1b[37m'
+        hyperlink_urls '\x1b[37m' "$body_file"
+        printf '\x1b[0m'
+    fi
     echo ""
 
     if [[ "$mode" == "delete" ]]; then
