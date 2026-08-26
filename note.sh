@@ -258,37 +258,18 @@ build_note_index() {
 
 read_note_interactive() {
     local output_file="$1"
+    local temp_file editor
+    temp_file=$(mktemp)
+    : > "$temp_file"
 
-    cat >&2 <<'EOF'
-Enter your note below.
+    editor="vim"
+    if ! command -v "$editor" >/dev/null 2>&1; then
+        editor="vi"
+    fi
 
-Save with any of these:
-  - A line containing only "."
-  - A line containing only "EOF"
-  - Ctrl+D on an empty line
-----------------------------------------
-EOF
-
-    local lines=()
-    local line=""
-
-    while true; do
-        if ! IFS= read -e -r line; then
-            break
-        fi
-
-        if [[ "$line" == "." || "$line" == "EOF" ]]; then
-            break
-        fi
-
-        lines+=("$line")
-    done
-
-    # Write lines to output file
-    : > "$output_file"
-    for line in "${lines[@]}"; do
-        printf '%s\n' "$line" >> "$output_file"
-    done
+    "$editor" "$temp_file"
+    cp "$temp_file" "$output_file"
+    rm -f "$temp_file"
 
     if [[ -f "$output_file" ]]; then
         if [[ -x "$GLOW" ]]; then

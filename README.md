@@ -32,15 +32,9 @@ Add a note interactively:
 ./note.sh -a "This is the title of a note"
 ```
 
-The interactive prompt reads your input line-by-line where you can:
-- Edit the current line using standard keys (Backspace, Delete, Left/Right arrows).
-- Use standard line editing shortcuts: **Ctrl+A** (Home), **Ctrl+E** (End), **Ctrl+U** (clear to start of line), and **Ctrl+K** (clear to end of line).
-- Press **Enter** to move to the next line.
+The interactive prompt opens **vim** where you can write your note with full text-editing and navigation capabilities.
 
-Save and exit with any of these:
-- Type a line with only `.` and press Enter
-- Type a line with only `EOF` and press Enter
-- Press **Ctrl+D** from anywhere to save the note immediately
+Save and exit vim by saving the file and quitting (`:wq` or `:x` or `ZZ`).
 
 Save a note directly without typing interactively:
 
