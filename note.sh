@@ -273,7 +273,7 @@ EOF
     local line=""
 
     while true; do
-        if ! IFS= read -r line; then
+        if ! IFS= read -e -r line; then
             break
         fi
 
