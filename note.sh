@@ -4,6 +4,7 @@ FZY="${FZY:-/opt/homebrew/bin/fzy}"
 GLOW="${GLOW:-/opt/homebrew/bin/glow}"
 NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
+export NO_HYPERLINKS="${NO_HYPERLINKS:-1}"
 
 SOURCE_PATH="${BASH_SOURCE[0]}"
 while [[ -h "$SOURCE_PATH" ]]; do

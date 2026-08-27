@@ -43,5 +43,13 @@
   },
   "item": {
     "block_prefix": "• "
+  },
+  "link": {
+    "color": "#00aaff",
+    "underline": true
+  },
+  "link_text": {
+    "color": "#ffffff",
+    "bold": true
   }
 }
