@@ -5,7 +5,14 @@ GLOW="${GLOW:-/opt/homebrew/bin/glow}"
 NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [[ -h "$SOURCE_PATH" ]]; do
+    DIR_PATH="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+    SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+    [[ "$SOURCE_PATH" != /* ]] && SOURCE_PATH="$DIR_PATH/$SOURCE_PATH"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+
 GLOW_THEME_FILE="${GLOW_THEME_FILE:-$SCRIPT_DIR/glow-theme.json}"
 GLOW_STYLE_FLAG=""
 if [[ -f "$GLOW_THEME_FILE" ]]; then

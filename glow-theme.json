@@ -27,6 +27,7 @@
     "color": "#00ffff"
   },
   "code_block": {
+    "theme": "",
     "color": "#00ffff",
     "margin": 2
   },
