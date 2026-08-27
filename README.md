@@ -99,3 +99,12 @@ Title: Meeting notes
 
 3. Third step
 ```
+
+## Testing
+
+Run the automated test suite:
+
+```bash
+./test.sh
+```
+
