@@ -1,0 +1,46 @@
+{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "#ffffff",
+    "margin": 2
+  },
+  "block_quote": {
+    "color": "#00ffff",
+    "italic": true,
+    "indent": 2
+  },
+  "heading": {
+    "color": "#00ffff",
+    "bold": true
+  },
+  "h1": {
+    "prefix": "# "
+  },
+  "h2": {
+    "prefix": "## "
+  },
+  "h3": {
+    "prefix": "### "
+  },
+  "code": {
+    "color": "#00ffff"
+  },
+  "code_block": {
+    "color": "#00ffff",
+    "margin": 2
+  },
+  "emph": {
+    "italic": true
+  },
+  "strong": {
+    "bold": true
+  },
+  "hr": {
+    "color": "#555555",
+    "format": "\n--------\n"
+  },
+  "item": {
+    "block_prefix": "• "
+  }
+}

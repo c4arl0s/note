@@ -2,7 +2,16 @@
 
 FZY="${FZY:-/opt/homebrew/bin/fzy}"
 GLOW="${GLOW:-/opt/homebrew/bin/glow}"
+NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GLOW_THEME_FILE="${GLOW_THEME_FILE:-$SCRIPT_DIR/glow-theme.json}"
+GLOW_STYLE_FLAG=""
+if [[ -f "$GLOW_THEME_FILE" ]]; then
+    GLOW_STYLE_FLAG="--style=$GLOW_THEME_FILE"
+fi
+
 
 NOTE_START="<<<NOTE>>>"
 NOTE_END="<<<END>>>"
@@ -80,74 +89,129 @@ decode_content() {
     }'
 }
 
+generate_note_filename() {
+    local title="$1"
+    local timestamp="$2"
+    local clean_title
+
+    # Convert to lowercase, replace non-alphanumeric with hyphens
+    clean_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')
+    # Trim leading and trailing hyphens
+    clean_title="${clean_title#-}"
+    clean_title="${clean_title%-}"
+
+    if [[ -z "$clean_title" || "$clean_title" == "untitled" ]]; then
+        # Fallback to date-time format: YYYY-MM-DD-HH-MM
+        local clean_ts
+        clean_ts=$(echo "$timestamp" | tr -cs '0-9' '-')
+        clean_ts="${clean_ts#-}"
+        clean_ts="${clean_ts%-}"
+        echo "${clean_ts}.txt"
+    else
+        echo "${clean_title}.txt"
+    fi
+}
+
+get_unique_filename() {
+    local dir="$1"
+    local base_name="$2"
+    local ext="$3"
+    local target="${dir}/${base_name}${ext}"
+    local counter=1
+    while [[ -f "$target" ]]; do
+        target="${dir}/${base_name}-${counter}${ext}"
+        counter=$((counter + 1))
+    done
+    echo "$target"
+}
+
+parse_note_file_fast() {
+    local filepath="$1"
+    local date_val=""
+    local title_val=""
+    local preview=""
+    local line
+    local count=0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        count=$((count + 1))
+        if [[ "$line" =~ ^[Dd]ate:[[:space:]]*(.*)$ ]]; then
+            date_val="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[Tt]itle:[[:space:]]*(.*)$ ]]; then
+            title_val="${BASH_REMATCH[1]}"
+        elif [[ -n "$line" && ! "$line" =~ ^[Dd]ate: && ! "$line" =~ ^[Tt]itle: ]]; then
+            if [[ -z "$preview" ]]; then
+                preview="$line"
+            fi
+        fi
+        [[ "$count" -ge 5 ]] && break
+    done < "$filepath"
+
+    if [[ -z "$date_val" ]]; then
+        date_val=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$filepath" 2>/dev/null || date -r "$filepath" "+%Y-%m-%d %H:%M" 2>/dev/null)
+    fi
+    if [[ -z "$title_val" ]]; then
+        local base
+        base=$(basename "$filepath")
+        title_val="${base%.txt}"
+    fi
+    [[ -z "$preview" ]] && preview="(empty note)"
+
+    local summary="${date_val} | ${title_val} | ${preview}"
+    printf '%s\t%s\t%s\t%s\n' "$filepath" "$title_val" "$date_val" "$summary"
+}
+
 save_note() {
     local timestamp="$1"
     local title="$2"
     local content_file="$3"
-    local encoded
+    local filename filepath
 
-    encoded=$(encode_content "$content_file")
-    printf '%s : %s : (%s)\n' "$timestamp" "$title" "$encoded" >> "$NOTES_FILE"
+    mkdir -p "$NOTES_DIR"
+    filename=$(generate_note_filename "$title" "$timestamp")
+    filepath=$(get_unique_filename "$NOTES_DIR" "${filename%.txt}" ".txt")
+
+    printf 'Date: %s\n' "$timestamp" > "$filepath"
+    printf 'Title: %s\n\n' "$title" >> "$filepath"
+    cat "$content_file" >> "$filepath"
 }
 
-delete_note_by_id() {
-    local target_id="$1"
-    local temp_file
-    temp_file=$(mktemp)
+migrate_old_notes() {
+    local old_file="$1"
+    local target_dir="$2"
 
-    local idx=0
-    local in_note=0
-    local skip_current=0
-    local line=""
+    if [[ -f "$old_file" && -s "$old_file" ]]; then
+        echo "Migrating old notes from $old_file to $target_dir..." >&2
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ -z "$line" ]]; then
-            if (( in_note && ! skip_current )) || ! (( in_note )); then
-                printf '%s\n' "$line" >> "$temp_file"
-            fi
-            continue
+        local index_dir summaries_file
+        index_dir=$(mktemp -d)
+        summaries_file=$(mktemp)
+
+        local orig_notes_file="$NOTES_FILE"
+        NOTES_FILE="$old_file"
+        build_note_index "$index_dir" "$summaries_file"
+        NOTES_FILE="$orig_notes_file"
+
+        if [[ -s "$summaries_file" ]]; then
+            mkdir -p "$target_dir"
+            local idx title timestamp summary body_file filename filepath
+            while IFS=$'\t' read -r idx title timestamp summary; do
+                body_file="${index_dir}/${idx}.body"
+                if [[ -f "$body_file" ]]; then
+                    filename=$(generate_note_filename "$title" "$timestamp")
+                    filepath=$(get_unique_filename "$target_dir" "${filename%.txt}" ".txt")
+
+                    printf 'Date: %s\n' "$timestamp" > "$filepath"
+                    printf 'Title: %s\n\n' "$title" >> "$filepath"
+                    cat "$body_file" >> "$filepath"
+                fi
+            done < "$summaries_file"
         fi
 
-        if [[ "$line" == "$NOTE_START" ]]; then
-            in_note=1
-            idx=$((idx + 1))
-            if [[ "$idx" -eq "$target_id" ]]; then
-                skip_current=1
-            else
-                skip_current=0
-                printf '%s\n' "$line" >> "$temp_file"
-            fi
-            continue
-        fi
-
-        if [[ "$line" == "$NOTE_END" ]]; then
-            if ! (( skip_current )); then
-                printf '%s\n' "$line" >> "$temp_file"
-            fi
-            in_note=0
-            skip_current=0
-            continue
-        fi
-
-        if (( in_note )); then
-            if ! (( skip_current )); then
-                printf '%s\n' "$line" >> "$temp_file"
-            fi
-            continue
-        fi
-
-        if [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*(.+)[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]] || \
-           [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+[0-9]{2}:[0-9]{2})[[:space:]]*:[[:space:]]*\((.*)\)[[:space:]]*$ ]]; then
-            idx=$((idx + 1))
-            if [[ "$idx" -ne "$target_id" ]]; then
-                printf '%s\n' "$line" >> "$temp_file"
-            fi
-        else
-            printf '%s\n' "$line" >> "$temp_file"
-        fi
-    done < "$NOTES_FILE"
-
-    mv "$temp_file" "$NOTES_FILE"
+        rm -rf "$index_dir" "$summaries_file"
+        mv "$old_file" "${old_file}.bak"
+        echo "Migration complete. Old notes archived as ${old_file}.bak" >&2
+    fi
 }
 
 note_preview() {
@@ -273,7 +337,7 @@ read_note_interactive() {
 
     if [[ -f "$output_file" ]]; then
         if [[ -x "$GLOW" ]]; then
-            "$GLOW" "$output_file" 2>/dev/null >&2
+            "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} "$output_file" 2>/dev/null >&2
         else
             printf '\x1b[37m' >&2
             hyperlink_urls '\x1b[37m' "$output_file" >&2
@@ -401,7 +465,7 @@ add_note() {
             echo "*Date: ${timestamp}*"
             echo "---"
             cat "$temp_out"
-        ) | "$GLOW" - 2>/dev/null >&2
+        ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null >&2
     else
         printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp" >&2
         printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m' >&2
@@ -419,50 +483,66 @@ list_notes() {
         exit 1
     fi
 
-    if [[ ! -s "$NOTES_FILE" ]]; then
+    if [[ ! -d "$NOTES_DIR" ]] || [[ -z "$(ls -A "$NOTES_DIR" 2>/dev/null)" ]]; then
         echo "No notes found." >&2
         return 0
     fi
 
-    local index_dir summaries_file fzy_input selected_line note_id title timestamp body_file
-
-    index_dir=$(mktemp -d)
+    local summaries_file fzy_input selected_line note_path title timestamp body_file
     summaries_file=$(mktemp)
     fzy_input=$(mktemp)
 
-    build_note_index "$index_dir" "$summaries_file"
+    for file in "$NOTES_DIR"/*.txt; do
+        if [[ -f "$file" ]]; then
+            parse_note_file_fast "$file" >> "$summaries_file"
+        fi
+    done
 
     if [[ ! -s "$summaries_file" ]]; then
-        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        rm -f "$summaries_file" "$fzy_input"
         echo "No notes found." >&2
         return 0
     fi
 
-    awk -F '\t' '{ lines[NR] = $4 } END { for (i = NR; i > 0; i--) print lines[i] }' "$summaries_file" > "$fzy_input"
+    # Display newest first
+    sort -t $'\t' -k 3,3 -r "$summaries_file" | awk -F '\t' '{ print $4 }' > "$fzy_input"
 
     selected_line=$(<"$fzy_input" "$FZY") || {
-        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        rm -f "$summaries_file" "$fzy_input"
         return 0
     }
 
     if [[ -z "$selected_line" ]]; then
-        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+        rm -f "$summaries_file" "$fzy_input"
         return 0
     fi
 
-    IFS=$'\t' read -r note_id title timestamp < <(
+    IFS=$'\t' read -r note_path title timestamp < <(
         selected="$selected_line" awk -F '\t' '
             BEGIN { OFS="\t" }
-            $4 == ENVIRON["selected"] { note_id = $1; title = $2; timestamp = $3 }
-            END { if (note_id != "") print note_id, title, timestamp }
+            $4 == ENVIRON["selected"] { note_path = $1; title = $2; timestamp = $3 }
+            END { if (note_path != "") print note_path, title, timestamp }
         ' "$summaries_file"
     )
-    body_file="$index_dir/$note_id.body"
 
-    if [[ -z "$note_id" || ! -f "$body_file" ]]; then
-        rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+    if [[ -z "$note_path" || ! -f "$note_path" ]]; then
+        rm -f "$summaries_file" "$fzy_input"
         return 0
     fi
+
+    # Extract note body (skipping headers)
+    body_file=$(mktemp)
+    local in_body=0
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$in_body" -eq 0 ]]; then
+            if [[ -z "$line" ]]; then
+                in_body=1
+            fi
+        else
+            printf '%s\n' "$line" >> "$body_file"
+        fi
+    done < "$note_path"
 
     if [[ -x "$GLOW" ]]; then
         (
@@ -470,7 +550,7 @@ list_notes() {
             echo "*Date: ${timestamp}*"
             echo "---"
             cat "$body_file"
-        ) | "$GLOW" - 2>/dev/null
+        ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null
     else
         printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
         printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
@@ -489,15 +569,23 @@ list_notes() {
             read -r answer || true
         fi
         if [[ "$answer" =~ ^[yY](es)?$ ]]; then
-            delete_note_by_id "$note_id"
+            rm -f "$note_path"
             echo "Note deleted."
         else
             echo "Cancelled."
         fi
     fi
 
-    rm -rf "$index_dir" "$summaries_file" "$fzy_input"
+    rm -f "$summaries_file" "$fzy_input" "$body_file"
 }
+
+# Run migration on notes.txt or notes.txt.bak
+if [[ -f "${NOTES_FILE}.bak" && ! -f "$NOTES_FILE" ]]; then
+    # If notes.txt.bak exists but notes.txt does not (e.g. after a restore), temporarily rename it so migrate_old_notes can pick it up!
+    mv "${NOTES_FILE}.bak" "$NOTES_FILE"
+fi
+migrate_old_notes "${NOTES_FILE:-$HOME/notes.txt}" "$NOTES_DIR"
+
 
 case "${1:-}" in
     -a|--add)

@@ -80,10 +80,16 @@ Shortcut to add a note (same as `-a`):
 
 Notes preserve multiple lines and empty lines exactly as written. Any HTTP/HTTPS URL links in the note are automatically highlighted as blue, underlined hyperlinks, allowing you to open them directly in your default web browser (like Safari) by clicking (or Cmd-clicking) them.
 
-Notes are saved to `~/notes.txt`, one line per note:
+Notes are saved inside `~/notes/` as separate `.txt` files. The file name is generated automatically based on the note's title (using lowercase and hyphens).
+
+Inside each note file, metadata headers are stored at the top:
 
 ```
-2026-07-04 12:59 : Meeting notes : (1. First step\n2. Second step\n\n3. Third step)
-```
+Date: 2026-07-04 12:59
+Title: Meeting notes
 
-Multi-line content is stored with `\n` inside the parentheses. Older note formats are still supported when listing.
+1. First step
+2. Second step
+
+3. Third step
+```
