@@ -32,6 +32,7 @@ Usage:
   $(basename "$0") -a [options] "<title>"   Add a note
   $(basename "$0") [options] "<title>"        Add a note (shortcut)
   $(basename "$0") -D                         Delete a note interactively
+  $(basename "$0") -E                         Edit a note interactively
 
 Add options:
   (default)             Interactive input; save with "." or "EOF" on its own line, or Ctrl+D
@@ -47,6 +48,7 @@ Examples:
   $(basename "$0") -a -e "Meeting notes"
   cat notes.md | $(basename "$0") -a "Meeting notes"
   $(basename "$0") -D
+  $(basename "$0") -E
 EOF
 }
 
@@ -552,21 +554,23 @@ list_notes() {
         fi
     done < "$note_path"
 
-    if [[ -x "$GLOW" ]]; then
-        (
-            echo "## ${title}"
-            echo "*Date: ${timestamp}*"
-            echo "---"
-            cat "$body_file"
-        ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null
-    else
-        printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
-        printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
-        printf '\x1b[37m'
-        hyperlink_urls '\x1b[37m' "$body_file"
-        printf '\x1b[0m'
+    if [[ "$mode" != "edit" ]]; then
+        if [[ -x "$GLOW" ]]; then
+            (
+                echo "## ${title}"
+                echo "*Date: ${timestamp}*"
+                echo "---"
+                cat "$body_file"
+            ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null
+        else
+            printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
+            printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
+            printf '\x1b[37m'
+            hyperlink_urls '\x1b[37m' "$body_file"
+            printf '\x1b[0m'
+        fi
+        echo ""
     fi
-    echo ""
 
     if [[ "$mode" == "delete" ]]; then
         printf '\nDelete this note? (y/n): '
@@ -582,6 +586,56 @@ list_notes() {
         else
             echo "Cancelled."
         fi
+    elif [[ "$mode" == "edit" ]]; then
+        local editor="vim"
+        if ! command -v "$editor" >/dev/null 2>&1; then
+            editor="vi"
+        fi
+
+        "$editor" "$note_path"
+        echo "Note updated."
+
+        # Re-read and display the updated note
+        local updated_body_file
+        updated_body_file=$(mktemp)
+        local in_body=0
+        local line
+        local updated_title=""
+        local updated_timestamp=""
+
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^[Dd]ate:[[:space:]]*(.*)$ ]]; then
+                updated_timestamp="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^[Tt]itle:[[:space:]]*(.*)$ ]]; then
+                updated_title="${BASH_REMATCH[1]}"
+            elif [[ "$in_body" -eq 0 ]]; then
+                if [[ -z "$line" ]]; then
+                    in_body=1
+                fi
+            else
+                printf '%s\n' "$line" >> "$updated_body_file"
+            fi
+        done < "$note_path"
+
+        [[ -z "$updated_title" ]] && updated_title="$title"
+        [[ -z "$updated_timestamp" ]] && updated_timestamp="$timestamp"
+
+        if [[ -x "$GLOW" ]]; then
+            (
+                echo "## ${updated_title}"
+                echo "*Date: ${updated_timestamp}*"
+                echo "---"
+                cat "$updated_body_file"
+            ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null
+        else
+            printf '\x1b[36mDate: %s\x1b[0m\n' "$updated_timestamp"
+            printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$updated_title" | hyperlink_urls '\x1b[36m'
+            printf '\x1b[37m'
+            hyperlink_urls '\x1b[37m' "$updated_body_file"
+            printf '\x1b[0m'
+        fi
+        echo ""
+        rm -f "$updated_body_file"
     fi
 
     rm -f "$summaries_file" "$fzy_input" "$body_file"
@@ -603,6 +657,10 @@ case "${1:-}" in
     -D)
         shift
         list_notes "delete"
+        ;;
+    -E)
+        shift
+        list_notes "edit"
         ;;
     -h|--help)
         usage

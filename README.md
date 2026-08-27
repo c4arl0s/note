@@ -72,6 +72,12 @@ Delete a note interactively with fzy (displays the selected note and prompts for
 ./note.sh -D
 ```
 
+Edit a note interactively with fzy (opens the selected note in vim for editing, and displays the updated note when finished):
+
+```bash
+./note.sh -E
+```
+
 Shortcut to add a note (same as `-a`):
 
 ```bash
