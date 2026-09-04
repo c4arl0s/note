@@ -66,6 +66,12 @@ List and search notes with fzy (displays 25 rows by default, configurable via `F
 ./note.sh
 ```
 
+List and search notes with fzy, then copy the note to the clipboard in addition to displaying it to standard output:
+
+```bash
+./note.sh -c
+```
+
 Delete a note interactively with fzy (displays the selected note and prompts for confirmation before deletion):
 
 ```bash

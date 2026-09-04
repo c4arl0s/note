@@ -32,6 +32,7 @@ Usage:
   $(basename "$0")                            List and search notes
   $(basename "$0") -a [options] "<title>"   Add a note
   $(basename "$0") [options] "<title>"        Add a note (shortcut)
+  $(basename "$0") -c, -C                     Copy note to clipboard after selecting
   $(basename "$0") -D                         Delete a note interactively
   $(basename "$0") -E                         Edit a note interactively
 
@@ -48,6 +49,7 @@ Examples:
   $(basename "$0") -a -f ./draft.txt "Meeting notes"
   $(basename "$0") -a -e "Meeting notes"
   cat notes.md | $(basename "$0") -a "Meeting notes"
+  $(basename "$0") -c
   $(basename "$0") -D
   $(basename "$0") -E
 EOF
@@ -242,6 +244,24 @@ note_preview() {
 hyperlink_urls() {
     local reset_color="${1:-\x1b[0m}"
     sed -E 's|(https?://[^]'"'"'`()<>[:space:]]*[^]'"'"'`()<>[:space:].,;:!?])|\x1b[4;34m\1\x1b[0m'"$reset_color"'|g' "${@:2}"
+}
+
+strip_ansi() {
+    sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' | sed -E 's/[[:space:]]+$//'
+}
+
+copy_to_clipboard() {
+    if command -v pbcopy >/dev/null 2>&1; then
+        pbcopy
+    elif command -v wl-copy >/dev/null 2>&1; then
+        wl-copy
+    elif command -v xclip >/dev/null 2>&1; then
+        xclip -selection clipboard
+    elif command -v xsel >/dev/null 2>&1; then
+        xsel --clipboard --input
+    else
+        return 1
+    fi
 }
 
 index_single_line_note() {
@@ -556,21 +576,38 @@ list_notes() {
     done < "$note_path"
 
     if [[ "$mode" != "edit" ]]; then
+        local note_output_file
+        note_output_file=$(mktemp)
+
         if [[ -x "$GLOW" ]]; then
             (
                 echo "## ${title}"
                 echo "*Date: ${timestamp}*"
                 echo "---"
                 cat "$body_file"
-            ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null
+            ) | "$GLOW" ${GLOW_STYLE_FLAG:+"$GLOW_STYLE_FLAG"} - 2>/dev/null > "$note_output_file"
         else
-            printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
-            printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
-            printf '\x1b[37m'
-            hyperlink_urls '\x1b[37m' "$body_file"
-            printf '\x1b[0m'
+            {
+                printf '\x1b[36mDate: %s\x1b[0m\n' "$timestamp"
+                printf '\x1b[36mTitle: %s\x1b[0m\n\n' "$title" | hyperlink_urls '\x1b[36m'
+                printf '\x1b[37m'
+                hyperlink_urls '\x1b[37m' "$body_file"
+                printf '\x1b[0m'
+            } > "$note_output_file"
         fi
+
+        cat "$note_output_file"
         echo ""
+
+        if [[ "$mode" == "copy" ]]; then
+            if strip_ansi < "$note_output_file" | copy_to_clipboard; then
+                echo "Note was also passed to the clipboard."
+            else
+                echo "Error: Unable to copy to clipboard (pbcopy/xclip not available)." >&2
+            fi
+        fi
+
+        rm -f "$note_output_file"
     fi
 
     if [[ "$mode" == "delete" ]]; then
@@ -654,6 +691,10 @@ case "${1:-}" in
     -a|--add)
         shift
         add_note "$@"
+        ;;
+    -c|-C|--copy)
+        shift
+        list_notes "copy"
         ;;
     -D)
         shift

@@ -455,6 +455,46 @@ EOF
     assert_contains "Appended during edit" "$content" "Edited file should contain updated text"
 }
 
+test_copy_note_to_clipboard() {
+    "$NOTE_SCRIPT" -a -m "Copyable content for clipboard" "Clipboard Note" >/dev/null 2>&1
+
+    # Mock fzy to select "Clipboard Note"
+    cat > "$MOCK_BIN/fzy" << 'EOF'
+#!/usr/bin/env bash
+grep "Clipboard Note"
+EOF
+    chmod +x "$MOCK_BIN/fzy"
+
+    # Mock pbcopy to write stdin to a temporary file
+    cat > "$MOCK_BIN/pbcopy" << 'EOF'
+#!/usr/bin/env bash
+cat > "$HOME/mock_clipboard.txt"
+EOF
+    chmod +x "$MOCK_BIN/pbcopy"
+
+    # Test -c flag
+    local out
+    out=$("$NOTE_SCRIPT" -c 2>&1)
+    local code=$?
+    assert_exit_code 0 $code "Copy note command with -c should exit with 0"
+    assert_contains "Clipboard Note" "$out" "Output should display the note"
+    assert_contains "Note was also passed to the clipboard." "$out" "Output should report note was copied to clipboard"
+
+    local copied_content
+    copied_content=$(<"$HOME/mock_clipboard.txt")
+    assert_contains "Clipboard Note" "$copied_content" "Clipboard should receive note title"
+    assert_contains "Copyable content for clipboard" "$copied_content" "Clipboard should receive note body"
+
+    # Test -C flag alias
+    rm -f "$HOME/mock_clipboard.txt"
+    local out_C
+    out_C=$("$NOTE_SCRIPT" -C 2>&1)
+    local code_C=$?
+    assert_exit_code 0 $code_C "Copy note command with -C should exit with 0"
+    assert_contains "Note was also passed to the clipboard." "$out_C" "Output should report note was copied to clipboard for -C"
+    assert_file_exists "$HOME/mock_clipboard.txt" "Clipboard file should be populated with -C"
+}
+
 test_legacy_migration_block_format() {
     # Create legacy monolithic notes.txt with <<<NOTE>>> format
     cat > "$NOTES_FILE" << 'EOF'
@@ -538,6 +578,7 @@ echo -e "\n${BOLD}Interactive Operations:${NC}"
 run_test test_delete_note_confirm_yes "Delete note with confirmation (yes)"
 run_test test_delete_note_cancel_no "Cancel note deletion (no)"
 run_test test_edit_note "Edit note interactively (-E)"
+run_test test_copy_note_to_clipboard "Copy note to clipboard (-c / -C)"
 
 echo -e "\n${BOLD}Legacy Migration:${NC}"
 run_test test_legacy_migration_block_format "Migrate legacy block format notes.txt"
