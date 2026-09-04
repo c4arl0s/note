@@ -60,7 +60,7 @@ Pipe content into the script:
 cat notes.md | ./note.sh -a "Meeting notes"
 ```
 
-List and search notes with fzy (with the latest note on top of the list), then print the selected note to stdout (default behavior when no arguments are provided):
+List and search notes with fzy (displays 25 rows by default, configurable via `FZY_LINES`, with the latest note on top of the list), then print the selected note to stdout (default behavior when no arguments are provided):
 
 ```bash
 ./note.sh

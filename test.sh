@@ -380,6 +380,30 @@ EOF
     assert_contains "New Note" "$first_line" "First item in fzy input should be the newer note"
 }
 
+test_list_notes_fzy_lines_flag() {
+    "$NOTE_SCRIPT" -a -m "Content of note" "Note For Lines Test" >/dev/null 2>&1
+
+    # Mock fzy to record arguments passed to it
+    cat > "$MOCK_BIN/fzy" << 'EOF'
+#!/usr/bin/env bash
+echo "$*" > "$HOME/fzy_args.txt"
+head -n 1
+EOF
+    chmod +x "$MOCK_BIN/fzy"
+
+    # Test default 25 lines
+    "$NOTE_SCRIPT" >/dev/null 2>&1
+    local default_args
+    default_args=$(<"$HOME/fzy_args.txt")
+    assert_contains "-l 25" "$default_args" "fzy should be called with default -l 25"
+
+    # Test custom FZY_LINES environment variable override
+    FZY_LINES=35 "$NOTE_SCRIPT" >/dev/null 2>&1
+    local custom_args
+    custom_args=$(<"$HOME/fzy_args.txt")
+    assert_contains "-l 35" "$custom_args" "fzy should be called with custom -l 35 when FZY_LINES is set"
+}
+
 test_delete_note_confirm_yes() {
     "$NOTE_SCRIPT" -a -m "Note to delete" "Delete Me" >/dev/null 2>&1
     local note_file="$NOTES_DIR/delete-me.txt"
@@ -508,6 +532,7 @@ echo -e "\n${BOLD}Listing & Searching:${NC}"
 run_test test_list_notes_empty "Listing with no notes"
 run_test test_list_notes_with_selection "Listing notes and selecting with fzy"
 run_test test_list_notes_newest_first_sorting "Sorting notes newest first"
+run_test test_list_notes_fzy_lines_flag "Pass -l LINES to fzy (default and custom FZY_LINES)"
 
 echo -e "\n${BOLD}Interactive Operations:${NC}"
 run_test test_delete_note_confirm_yes "Delete note with confirmation (yes)"

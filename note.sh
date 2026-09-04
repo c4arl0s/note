@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 FZY="${FZY:-/opt/homebrew/bin/fzy}"
+FZY_LINES="${FZY_LINES:-25}"
 GLOW="${GLOW:-/opt/homebrew/bin/glow}"
 NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
@@ -517,7 +518,7 @@ list_notes() {
     # Display newest first
     sort -t $'\t' -k 3,3 -r "$summaries_file" | awk -F '\t' '{ print $4 }' > "$fzy_input"
 
-    selected_line=$(<"$fzy_input" "$FZY") || {
+    selected_line=$(<"$fzy_input" "$FZY" -l "$FZY_LINES") || {
         rm -f "$summaries_file" "$fzy_input"
         return 0
     }
