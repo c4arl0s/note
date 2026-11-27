@@ -119,6 +119,17 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local needle="$1"
+    local haystack="$2"
+    local label="${3:-Unexpected pattern found in string}"
+
+    if [[ "$haystack" == *"$needle"* ]]; then
+        echo "Assertion failed: $label (Did not expect: '$needle' in '$haystack')" >&2
+        return 1
+    fi
+}
+
 assert_file_exists() {
     local file="$1"
     local label="${2:-File does not exist}"
@@ -455,6 +466,70 @@ EOF
     assert_contains "Appended during edit" "$content" "Edited file should contain updated text"
 }
 
+test_edited_note_moves_to_top() {
+    mkdir -p "$NOTES_DIR"
+    cat > "$NOTES_DIR/old-note.txt" << 'EOF'
+Date: 2020-01-01 10:00
+Title: Old Note
+
+Old content
+EOF
+
+    cat > "$NOTES_DIR/new-note.txt" << 'EOF'
+Date: 2026-01-01 12:00
+Title: New Note
+
+New content
+EOF
+
+    # Mock fzy: select "Old Note" for editing, and record list order
+    cat > "$MOCK_BIN/fzy" << 'EOF'
+#!/usr/bin/env bash
+cat > "$HOME/fzy_received_input.txt"
+grep "${FZY_PICK:-.}" "$HOME/fzy_received_input.txt" | head -n 1
+EOF
+    chmod +x "$MOCK_BIN/fzy"
+
+    cat > "$MOCK_BIN/vim" << 'EOF'
+#!/usr/bin/env bash
+echo "Edited line" >> "$1"
+EOF
+    chmod +x "$MOCK_BIN/vim"
+
+    FZY_PICK="Old Note" "$NOTE_SCRIPT" -E >/dev/null 2>&1
+
+    local content
+    content=$(<"$NOTES_DIR/old-note.txt")
+    assert_not_contains "Date: 2020-01-01 10:00" "$content" "Edited note Date header should be bumped"
+    assert_contains "Title: Old Note" "$content" "Edited note should keep its title"
+    assert_contains "Edited line" "$content" "Edited note should keep edits"
+    assert_contains $'Updated: ' "$content" "Edited note should get an Updated header"
+
+    # Next listing should show the edited note first
+    "$NOTE_SCRIPT" >/dev/null 2>&1
+    local first_line
+    first_line=$(head -n 1 "$HOME/fzy_received_input.txt")
+    assert_contains "Old Note" "$first_line" "Edited note should be first in the list"
+    assert_contains "| Updated | Old Note |" "$(sed -E 's/\x1b\[[0-9;]*m//g' <<< "$first_line")" \
+        "Edited note should show the Updated tag as the second column"
+    assert_contains $'\e[32mUpdated\e[39m' "$first_line" "Updated tag should be colored"
+
+    local unedited_line
+    unedited_line=$(grep "New Note" "$HOME/fzy_received_input.txt")
+    assert_not_contains "Updated" "$unedited_line" "Unedited note should not show the Updated tag"
+
+    # The next day, the tag should be gone
+    NOTE_TODAY="2999-01-01" "$NOTE_SCRIPT" >/dev/null 2>&1
+    first_line=$(head -n 1 "$HOME/fzy_received_input.txt")
+    assert_contains "Old Note" "$first_line" "Edited note should still be first the next day"
+    assert_not_contains "Updated" "$first_line" "Updated tag should expire the next day"
+
+    # Selecting a tagged note should still display it
+    local out
+    out=$(FZY_PICK="Old Note" "$NOTE_SCRIPT" 2>&1)
+    assert_contains "Edited line" "$out" "Selecting a tagged note should display its content"
+}
+
 test_copy_note_to_clipboard() {
     "$NOTE_SCRIPT" -a -m "Copyable content for clipboard" "Clipboard Note" >/dev/null 2>&1
 
@@ -578,6 +653,7 @@ echo -e "\n${BOLD}Interactive Operations:${NC}"
 run_test test_delete_note_confirm_yes "Delete note with confirmation (yes)"
 run_test test_delete_note_cancel_no "Cancel note deletion (no)"
 run_test test_edit_note "Edit note interactively (-E)"
+run_test test_edited_note_moves_to_top "Edited note moves to top of list (-E)"
 run_test test_copy_note_to_clipboard "Copy note to clipboard (-c / -C)"
 
 echo -e "\n${BOLD}Legacy Migration:${NC}"
