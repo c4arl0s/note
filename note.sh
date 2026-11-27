@@ -6,6 +6,10 @@ GLOW="${GLOW:-/opt/homebrew/bin/glow}"
 NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
 NOTES_FILE="${NOTES_FILE:-$HOME/notes.txt}"
 export NO_HYPERLINKS="${NO_HYPERLINKS:-1}"
+# Color of the "Updated" tag in the list (default: green). The reset only
+# restores the default foreground so fzy's selection highlight is preserved.
+UPDATED_COLOR="${UPDATED_COLOR:-$'\e[32m'}"
+UPDATED_COLOR_RESET=$'\e[39m'
 
 SOURCE_PATH="${BASH_SOURCE[0]}"
 while [[ -h "$SOURCE_PATH" ]]; do
@@ -142,6 +146,7 @@ parse_note_file_fast() {
     local filepath="$1"
     local date_val=""
     local title_val=""
+    local updated_val=""
     local preview=""
     local line
     local count=0
@@ -152,12 +157,14 @@ parse_note_file_fast() {
             date_val="${BASH_REMATCH[1]}"
         elif [[ "$line" =~ ^[Tt]itle:[[:space:]]*(.*)$ ]]; then
             title_val="${BASH_REMATCH[1]}"
-        elif [[ -n "$line" && ! "$line" =~ ^[Dd]ate: && ! "$line" =~ ^[Tt]itle: ]]; then
+        elif [[ "$line" =~ ^[Uu]pdated:[[:space:]]*(.*)$ ]]; then
+            updated_val="${BASH_REMATCH[1]}"
+        elif [[ -n "$line" ]]; then
             if [[ -z "$preview" ]]; then
                 preview="$line"
             fi
         fi
-        [[ "$count" -ge 5 ]] && break
+        [[ "$count" -ge 6 ]] && break
     done < "$filepath"
 
     if [[ -z "$date_val" ]]; then
@@ -170,7 +177,14 @@ parse_note_file_fast() {
     fi
     [[ -z "$preview" ]] && preview="(empty note)"
 
-    local summary="${date_val} | ${title_val} | ${preview}"
+    local summary
+    # Show the "Updated" tag only on the same day the note was edited
+    local today="${NOTE_TODAY:-$(date '+%Y-%m-%d')}"
+    if [[ -n "$updated_val" && "${updated_val:0:10}" == "$today" ]]; then
+        summary="${date_val} | ${UPDATED_COLOR}Updated${UPDATED_COLOR_RESET} | ${title_val} | ${preview}"
+    else
+        summary="${date_val} | ${title_val} | ${preview}"
+    fi
     printf '%s\t%s\t%s\t%s\n' "$filepath" "$title_val" "$date_val" "$summary"
 }
 
@@ -187,6 +201,36 @@ save_note() {
     printf 'Date: %s\n' "$timestamp" > "$filepath"
     printf 'Title: %s\n\n' "$title" >> "$filepath"
     cat "$content_file" >> "$filepath"
+}
+
+mark_note_updated() {
+    # In the header block (before the first blank line) of a note file:
+    #   - replace the Date header with the given timestamp, so the note sorts
+    #     to the top of the list (newest first)
+    #   - set an "Updated:" header, used to show the "Updated" tag in the list
+    # Notes without headers fall back to the file mtime, which editing already
+    # updates.
+    local filepath="$1"
+    local timestamp="$2"
+    local tmp_file
+
+    tmp_file=$(mktemp)
+    if awk -v ts="$timestamp" '
+        in_header && /^$/ {
+            if (has_header) print "Updated: " ts
+            in_header = 0
+            print
+            next
+        }
+        in_header && /^[Uu]pdated:/ { next }
+        in_header && !done && /^[Dd]ate:/ { print "Date: " ts; done = 1; has_header = 1; next }
+        in_header && /^[Tt]itle:/ { has_header = 1 }
+        { print }
+        END { if (in_header && has_header) print "Updated: " ts }
+    ' in_header=1 "$filepath" > "$tmp_file"; then
+        cat "$tmp_file" > "$filepath"
+    fi
+    rm -f "$tmp_file"
 }
 
 migrate_old_notes() {
@@ -523,6 +567,7 @@ list_notes() {
     summaries_file=$(mktemp)
     fzy_input=$(mktemp)
 
+    NOTE_TODAY="${NOTE_TODAY:-$(date '+%Y-%m-%d')}"
     for file in "$NOTES_DIR"/*.txt; do
         if [[ -f "$file" ]]; then
             parse_note_file_fast "$file" >> "$summaries_file"
@@ -630,7 +675,17 @@ list_notes() {
             editor="vi"
         fi
 
+        local checksum_before checksum_after
+        checksum_before=$(cksum < "$note_path")
+
         "$editor" "$note_path"
+
+        # If the note was modified, bump its Date header to now so it is
+        # listed at the top the next time notes are listed (newest first).
+        checksum_after=$(cksum < "$note_path" 2>/dev/null)
+        if [[ -f "$note_path" && "$checksum_before" != "$checksum_after" ]]; then
+            mark_note_updated "$note_path" "$(date '+%Y-%m-%d %H:%M')"
+        fi
         echo "Note updated."
 
         # Re-read and display the updated note

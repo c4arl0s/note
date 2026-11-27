@@ -84,6 +84,14 @@ Edit a note interactively with fzy (opens the selected note in vim for editing, 
 ./note.sh -E
 ```
 
+Edited notes move to the top of the list and show a green `Updated` tag for the rest of that day:
+
+```
+2026-11-27 10:39 | Updated | Paste over text between two parenthesis | Yank the content of the first pair of parentheses.
+```
+
+The tag color can be changed with the `UPDATED_COLOR` environment variable (e.g. `UPDATED_COLOR=$'\e[35m'` for magenta).
+
 Shortcut to add a note (same as `-a`):
 
 ```bash
